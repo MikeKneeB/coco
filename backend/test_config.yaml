@@ -16,4 +16,6 @@ PeriodicCommand:
 RunOn:
   mode : "time"
   time : 1.66
-  fs_change : /tmp/changeable
+  fs_root : /tmp/changeable
+  fs_extensions:
+    - "go"

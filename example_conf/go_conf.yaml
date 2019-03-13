@@ -1,0 +1,15 @@
+PeriodicCommand:
+  command : "go"
+  args:
+    - "build"
+    - "coco"
+    - "dummy"
+  env:
+    - "GOPATH=$GOPATH:/home/mikek/dummy"
+
+RunOn:
+  mode : "fs"
+  time : 2
+  fs_root : "src/coco"
+  fs_extensions:
+    - "go"

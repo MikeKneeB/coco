@@ -5,7 +5,7 @@ import (
   "coco/backend"
 )
 
-func Begin() (*gocui.Gui, error) {
+func Begin() (*Controller, error) {
   g, err := gocui.NewGui(gocui.OutputNormal)
   if err != nil {
     return nil, err
@@ -19,14 +19,13 @@ func Begin() (*gocui.Gui, error) {
   if err != nil {
     return nil, err
   }
-  c.StartCommandLoop()
 
   err = g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, quit)
   if err != nil {
     return nil, err
 	}
 
-  return g, nil
+  return c, nil
 }
 
 func quit(g *gocui.Gui, v *gocui.View) error {
