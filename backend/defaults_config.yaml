@@ -1,0 +1,5 @@
+Init:
+  command : do-setup
+
+PeriodicCommand:
+  command : real-command

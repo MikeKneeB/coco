@@ -1,0 +1,13 @@
+Init:
+  command : "touch"
+  args:
+    - "init.txt"
+
+
+PeriodicCommand:
+  command : "echo"
+  args:
+    - "Hello, world!"
+
+RunOn:
+  time : 1 
