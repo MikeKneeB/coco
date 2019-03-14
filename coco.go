@@ -4,17 +4,10 @@ import (
   "github.com/jroimartin/gocui"
   "github.com/MikeKneeB/coco/frontend"
   "log"
-  "os"
 )
 
 func main() {
   /* Log stuff... */
-  f, err := os.Create("coco_log.txt")
-  if err != nil {
-    log.Panicln(err)
-  }
-  defer f.Close()
-  log.SetOutput(f)
   /* */
   c := frontend.NewController()
   g, err := gocui.NewGui(gocui.OutputNormal)

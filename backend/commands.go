@@ -67,6 +67,10 @@ type CommandDef struct {
   Args, Env []string
 }
 
+func (c CommandDef) String() string {
+  return c.Name + strings.Join(c.Args, " ")
+}
+
 func (c *CommandDef) MakeRunnable() *exec.Cmd {
   runnable := exec.Command(c.Name, c.Args...)
   runnable.Env = c.Env
