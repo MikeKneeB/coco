@@ -26,9 +26,12 @@ func setDefaults(viper *viper.Viper) {
   }
 }
 
-func ReadConfig() (*viper.Viper, error) {
+func ReadConfig(paths []string) (*viper.Viper, error) {
   viper := viper.New()
   viper.AddConfigPath(".")
+  for _, v := range paths {
+    viper.AddConfigPath(v)
+  }
   viper.SetConfigName("config")
   setDefaults(viper)
   err := viper.ReadInConfig()
@@ -40,6 +43,52 @@ func ReadConfig() (*viper.Viper, error) {
     return nil, err
   }
   return viper, nil
+}
+
+type CommandMode int
+
+const (
+  TimeMode CommandMode = iota
+  FSMode
+  SignalMode
+  Invalid
+)
+
+func GetCommandMode(viper *viper.Viper) CommandMode {
+  if viper.IsSet("RunOn.mode") {
+    switch mode := viper.GetString("RunOn.mode"); mode {
+    case "time":
+      if !viper.IsSet("RunOn.time") {
+        return Invalid
+      }
+      return TimeMode
+    case "fs":
+      if !viper.IsSet("RunOn.fs_root") {
+        return Invalid
+      }
+      return FSMode
+    default:
+      return Invalid
+    }
+  } else {
+    if viper.IsSet("RunOn.time") {
+      return TimeMode
+    } else if viper.IsSet("RunOn.fs_root") {
+      return FSMode
+    } else {
+      return Invalid
+    }
+  }
+}
+
+func ReadPeriodicCommand(viper *viper.Viper) (CommandDef, error) {
+  com := CommandDef{Name: viper.GetString("PeriodicCommand.command"),
+  Dir: viper.GetString("PeriodicCommand.dir"),
+  Args: viper.GetStringSlice("PeriodicCommand.args"), Env: []string{}}
+  var err error
+  com.Env, err = MakeEnvironment(
+    viper.GetStringSlice("PeriodicCommand.env"))
+  return com, err
 }
 
 /*

@@ -2,34 +2,50 @@ package main
 
 import (
   "github.com/jroimartin/gocui"
-  "coco/frontend"
+  "github.com/MikeKneeB/coco/frontend"
   "log"
   "os"
 )
 
 func main() {
+  /* Log stuff... */
   f, err := os.Create("coco_log.txt")
   if err != nil {
     log.Panicln(err)
   }
   defer f.Close()
   log.SetOutput(f)
-  log.Println("WHAT")
-  c, err := frontend.NewController()
-  log.Println("HMM")
+  /* */
+  c := frontend.NewController()
+  g, err := gocui.NewGui(gocui.OutputNormal)
   if err != nil {
     log.Panicln(err)
   }
-  defer c.Gui.Close()
+  defer g.Close()
 
+  // Add created gui to the controller!
+  c.AddGui(g)
+
+  // Read config file
+  err = c.ReadConfig()
+  if err != nil {
+    log.Panicln(err)
+  }
+
+  // Make necessary dirs, run Init command
+  err = c.Init()
+  if err != nil {
+    log.Panicln(err)
+  }
+
+  // Begin processing loop
   err = c.StartCommandLoop()
-  log.Println("EH?")
   if err != nil {
     log.Panicln(err)
   }
 
+  // Begin gui's main loop - blocks until quit signal sent
   err = c.Gui.MainLoop()
-  log.Println("FUCK")
   if err != nil && err != gocui.ErrQuit {
     log.Panicln(err)
   }

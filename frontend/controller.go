@@ -4,7 +4,7 @@ import (
   "github.com/jroimartin/gocui"
   "github.com/spf13/viper"
   "github.com/fsnotify/fsnotify"
-  "coco/backend"
+  "github.com/MikeKneeB/coco/backend"
   "fmt"
   "errors"
   "log"
@@ -25,31 +25,35 @@ type Controller struct {
   stopChan chan bool
 }
 
-func NewController() (*Controller, error) {
-  g, err := gocui.NewGui(gocui.OutputNormal)
-  if err != nil {
-    return nil, err
-  }
-
+func NewController() *Controller {
   c := new(Controller)
-  c.Configuration, err = backend.ReadConfig()
-  if err != nil {
-    return nil, err
-  }
+
+  c.stopChan = make(chan bool)
+
+  return c
+}
+
+func (c *Controller) AddGui(g *gocui.Gui) error {
   c.Gui = g
   g.SetManager(c)
 
-  err = c.Init()
+  // Key Binds?
+  err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, c.quit)
   if err != nil {
-    return nil, err
-  }
-
-  err = g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, c.quit)
-  if err != nil {
-    return nil, err
+    return err
 	}
 
-  return c, nil
+  return nil
+}
+
+func (c *Controller) ReadConfig() error {
+  var err error
+  c.Configuration, err = backend.ReadConfig([]string{})
+  if err != nil {
+    return err
+  }
+
+  return nil
 }
 
 func (c *Controller) quit(g *gocui.Gui, v *gocui.View) error {
@@ -101,36 +105,15 @@ func (c *Controller) StartCommandLoop() error {
   if (c.Configuration == nil) {
     return ErrNoConfig
   }
-  c.stopChan = make(chan bool)
-  // Time case:
 
-  log.Println("ALSO FUCK")
-
-  if c.Configuration.IsSet("RunOn.mode") {
-    switch mode := c.Configuration.GetString("RunOn.mode"); mode {
-    case "time":
-      if !c.Configuration.IsSet("RunOn.time") {
-        return ErrBadConfig
-      }
-      log.Println("start t loop")
-      go c.timeLoop()
-    case "fs":
-      if !c.Configuration.IsSet("RunOn.fs_root") {
-        return ErrBadConfig
-      }
-      log.Println("start fs loop")
-      go c.fsLoop()
-    default:
-      return ErrBadConfig
-    }
-  } else {
-    if c.Configuration.IsSet("RunOn.time") {
-      go c.timeLoop()
-    } else if c.Configuration.IsSet("RunOn.fs_root") {
-      go c.fsLoop()
-    } else {
-      return ErrBadConfig
-    }
+  switch mode := backend.GetCommandMode(c.Configuration) ; mode {
+  case backend.TimeMode:
+    go c.timeLoop()
+  case backend.FSMode:
+    go c.fsLoop()
+  case backend.SignalMode:
+  default:
+    return ErrBadConfig
   }
   return nil
 }
@@ -139,26 +122,11 @@ func (c *Controller) StopCommandLoop() {
   c.stopChan <- true
 }
 
-// TODO: Move me over to the backend
-type commandDef struct {
-  name, dir string
-  args, env []string
-}
-
-func (c *Controller) readPeriodic() (commandDef, error) {
-  com := commandDef{name: c.Configuration.GetString("PeriodicCommand.command"),
-  dir: c.Configuration.GetString("PeriodicCommand.dir"),
-  args: c.Configuration.GetStringSlice("PeriodicCommand.args"), env: []string{}}
-  var err error
-  com.env, err = backend.MakeEnvironment(
-    c.Configuration.GetStringSlice("PeriodicCommand.env"))
-  return com, err
-}
 
 func (c *Controller) timeLoop() {
   // Read relevant config items:
   t_out := c.Configuration.GetFloat64("RunOn.time")
-  com, err := c.readPeriodic()
+  com, err := backend.ReadPeriodicCommand(c.Configuration)
   if err != nil {
     // Call some kind of error report?
     log.Println(err)
@@ -177,10 +145,7 @@ func (c *Controller) timeLoop() {
       quit_chan <- true
       return
     case <-time.After(time.Duration(t_out * 1000000000 ) * time.Nanosecond):
-      ex_com := exec.Command(com.name, com.args...)
-      ex_com.Dir = com.dir
-      ex_com.Env = com.env;
-      com_chan <- ex_com
+      com_chan <- com.MakeRunnable()
     }
 
     output, err := (<-result)()
@@ -197,7 +162,7 @@ func (c *Controller) timeLoop() {
 
 func (c *Controller) fsLoop() {
   log.Println("Enter fs loop")
-  com, err := c.readPeriodic()
+  com, err := backend.ReadPeriodicCommand(c.Configuration)
   if err != nil {
     log.Println(err)
     return
@@ -237,10 +202,7 @@ func (c *Controller) fsLoop() {
   log.Println("Done adding")
   send_comm := false
 
-  ex_com := exec.Command(com.name, com.args...)
-  ex_com.Dir = com.dir
-  ex_com.Env = com.env;
-  com_chan <- ex_com
+  com_chan <- com.MakeRunnable()
 
   output, err := (<-result)()
   if err != nil {
@@ -285,10 +247,7 @@ func (c *Controller) fsLoop() {
     }
 
     if send_comm {
-      ex_com := exec.Command(com.name, com.args...)
-      ex_com.Dir = com.dir
-      ex_com.Env = com.env;
-      com_chan <- ex_com
+      com_chan <- com.MakeRunnable()
 
       output, err := (<-result)()
       if err != nil {

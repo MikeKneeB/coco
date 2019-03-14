@@ -61,3 +61,15 @@ func MakeEnvironment(add []string) ([]string, error) {
   }
   return env, nil
 }
+
+type CommandDef struct {
+  Name, Dir string
+  Args, Env []string
+}
+
+func (c *CommandDef) MakeRunnable() *exec.Cmd {
+  runnable := exec.Command(c.Name, c.Args...)
+  runnable.Env = c.Env
+  runnable.Dir = c.Dir
+  return runnable
+}
