@@ -119,7 +119,7 @@ func TestRunInit(t *testing.T) {
     t.Error(err)
   }
   args := []string{"argument 1"}
-  err = RunInit("./test_script", ".", args, env)
+  err = RunInit("./test_util/test_script", ".", args, env)
   if err != nil {
     t.Error(err)
   }
@@ -143,6 +143,44 @@ func TestRunInit(t *testing.T) {
   t.Log(scanner.Text())
   if scanner.Text() != "Hello, world!" {
     t.Fail()
+  }
+}
+
+func TestRunInitBadConf(t *testing.T) {
+  env := []string{"NOT VALID"}
+  args := []string{"argument 1"}
+  err := RunInit("./test_script", ".", args, env)
+  t.Log(err)
+  if err == nil {
+    t.Fail();
+  }
+}
+
+func TestCommandDefString(t *testing.T) {
+  c := CommandDef{"hello", "world", []string{"these", "are", "args"}, []string{"this", "is", "env"}}
+  if c.String() != "hello these are args" {
+    t.Error("Command string", c.String(), "expected: hello these are args")
+  }
+}
+
+func TestMakeRunnable(t *testing.T) {
+  craw := CommandDef{"hello", "world", []string{"these", "are", "args"}, []string{"this", "is", "env"}}
+  c := craw.MakeRunnable()
+
+  if c.Path != "hello" {
+    t.Error("Cmd path", c.Path, "expected hello")
+  }
+
+  if !unorderSliceEqual(c.Args, []string{"hello", "these", "are", "args"}) {
+    t.Error("Cmd args", c.Args, "expected", []string{"hello", "these", "are", "args"})
+  }
+
+  if c.Dir != "world" {
+    t.Error("Cmd dir", c.Dir, "expected world")
+  }
+
+  if !unorderSliceEqual(c.Env, []string{"this", "is", "env"}) {
+    t.Error("Cmd env", c.Env, "expected", []string{"this", "is", "env"})
   }
 }
 

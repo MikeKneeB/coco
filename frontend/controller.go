@@ -7,7 +7,6 @@ import (
   "fmt"
   "errors"
   "os"
-  "log"
   "time"
 )
 
@@ -19,11 +18,16 @@ type Controller struct {
   Gui *gocui.Gui
 
   runner Runner
+
+  operation string
+  logY int
 }
 
 func NewController() *Controller {
   c := new(Controller)
 
+  c.operation = "IDLE"
+  c.logY = 1
   return c
 }
 
@@ -31,18 +35,18 @@ func (c *Controller) AddGui(g *gocui.Gui) error {
   c.Gui = g
   g.SetManager(c)
 
-  // Key Binds?
+  // Key Binds
   err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, c.quit)
   if err != nil {
     return err
 	}
 
-  return nil
-}
+  err = g.SetKeybinding("", 'u', gocui.ModNone, c.forceUpdate)
+  if err != nil {
+    return err
+  }
 
-func (c *Controller) ReadConfig() error {
-  var err error
-  c.Configuration, err = backend.ReadConfig([]string{})
+  err = g.SetKeybinding("", 'l', gocui.ModNone, c.toggleLog)
   if err != nil {
     return err
   }
@@ -55,21 +59,54 @@ func (c *Controller) quit(g *gocui.Gui, v *gocui.View) error {
   return gocui.ErrQuit
 }
 
+func (c *Controller) forceUpdate(g *gocui.Gui, v *gocui.View) error {
+  c.runner.Signal(ForceUpdate)
+  return nil
+}
+
+func (c *Controller) toggleLog(g *gocui.Gui, v *gocui.View) error {
+  c.logY = (c.logY + 1) % 2
+  return nil
+}
+
+func (c *Controller) ReadConfig() error {
+  var err error
+  c.Log("Reading config file...")
+  c.Configuration, err = backend.ReadConfig([]string{})
+  if err != nil {
+    c.Log("Error reading config file: ", err)
+    return err
+  }
+
+  c.Log("Successfully got configuration.")
+  return nil
+}
+
 func (c *Controller) Layout(g *gocui.Gui) error {
   max_x, max_y := g.Size()
 
-  v, err := g.SetView("normal", 0, 0, max_x - 1, max_y - 9)
+  v, err := g.SetView("operation", 0, -1, max_x - 1, 2)
   if err == gocui.ErrUnknownView {
-    v.Wrap = true
+    v.Frame = false
+    v.FgColor = gocui.AttrBold
   } else if err != nil {
     return err
   }
+  v.Clear()
+  fmt.Fprint(v, c.operation)
 
   v, err = g.SetView("log", 0, max_y - 8, max_x - 1, max_y - 1)
   if err == gocui.ErrUnknownView {
     v.Wrap = true
     v.Autoscroll = true
     v.Title = "Log"
+  } else if err != nil {
+    return err
+  }
+
+  v, err = g.SetView("normal", 0, 1, max_x - 1, max_y - (c.logY * 8 + 1))
+  if err == gocui.ErrUnknownView {
+    v.Wrap = true
   } else if err != nil {
     return err
   }
@@ -82,23 +119,30 @@ func (c *Controller) Init() error {
     return ErrNoConfig
   }
 
-  err := os.MkdirAll(c.Configuration.GetString("PeriodicCommand.dir"), 0755)
+  pcDir := c.Configuration.GetString("PeriodicCommand.dir")
+  c.Log("Creating configured periodic command directory:", pcDir)
+  err := os.MkdirAll(pcDir, 0755)
   if err != nil {
+    c.Log(err)
     return err
   }
-  if c.Configuration.GetString("Init.dir") !=
-    c.Configuration.GetString("PeriodicCommand.dir") {
-    err = os.MkdirAll(c.Configuration.GetString("Init.dir"), 0755)
+  icDir := c.Configuration.GetString("Init.dir")
+  if icDir != pcDir {
+    c.Log("Creating configured init command directory:", icDir)
+    err = os.MkdirAll(icDir, 0755)
     if err != nil {
+      c.Log(err)
       return err
     }
   }
 
   if c.Configuration.IsSet("Init.Command") {
-    err = backend.RunInit(c.Configuration.GetString("Init.command"),
-      c.Configuration.GetString("Init.dir"),
-      c.Configuration.GetStringSlice("Init.args"),
-      c.Configuration.GetStringSlice("Init.env"))
+    com := c.Configuration.GetString("Init.command")
+    args := c.Configuration.GetStringSlice("Init.args")
+    dir := c.Configuration.GetString("Init.dir")
+    env := c.Configuration.GetStringSlice("Init.env")
+    c.Log("Running init command:", com, args)
+    err = backend.RunInit(com, dir, args, env)
     if err != nil {
       return err
     }
@@ -107,7 +151,6 @@ func (c *Controller) Init() error {
   return nil
 }
 
-// TODO: Move command loop type to backend
 func (c *Controller) StartCommandLoop() error {
   if (c.Configuration == nil) {
     return ErrNoConfig
@@ -121,11 +164,11 @@ func (c *Controller) StartCommandLoop() error {
   switch mode := backend.GetCommandMode(c.Configuration) ; mode {
   case backend.TimeMode:
     c.runner = NewTimeRunner(c.Configuration.GetFloat64("RunOn.time"), com,
-    c.ShowOutput, c.Log)
+    NewRunnerFuncs(c.ShowOutput, c.Log, c.UpdateOperation))
   case backend.FSMode:
     c.runner, err = NewFSRunner(c.Configuration.GetString("RunOn.fs_root"),
-    c.Configuration.GetStringSlice("RunOn.fs_extensions"), com, c.ShowOutput,
-    c.Log)
+    c.Configuration.GetStringSlice("RunOn.fs_extensions"), com,
+    NewRunnerFuncs( c.ShowOutput, c.Log, c.UpdateOperation))
     if err != nil {
       return err
     }
@@ -138,9 +181,8 @@ func (c *Controller) StartCommandLoop() error {
 }
 
 func (c *Controller) StopCommandLoop() {
-  log.Println("Call stop command")
+  c.Log("Call stop command")
   c.runner.Signal(Quit)
-  log.Println("Done stopping command")
 }
 
 func (c *Controller) ShowOutput(output string, return_code int) {
@@ -169,6 +211,13 @@ func (c *Controller) Log(items ...interface{}) {
     for _, log_item := range items {
       fmt.Fprint(v, log_item, "")
     }
+    return nil
+  })
+}
+
+func (c *Controller) UpdateOperation(op string) {
+  c.operation = op
+  c.Gui.Update(func(g *gocui.Gui) error {
     return nil
   })
 }

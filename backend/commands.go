@@ -68,7 +68,7 @@ type CommandDef struct {
 }
 
 func (c CommandDef) String() string {
-  return c.Name + strings.Join(c.Args, " ")
+  return c.Name + " " + strings.Join(c.Args, " ")
 }
 
 func (c *CommandDef) MakeRunnable() *exec.Cmd {

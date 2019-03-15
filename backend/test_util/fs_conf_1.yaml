@@ -1,0 +1,18 @@
+Init:
+  command : do-setup
+  args:
+    - -f
+    - --longer-arg
+    - long_arg_val
+    - "arg with space"
+  dir : /tmp/setup
+  env:
+    - "GOPATH=$GOPATH:/location/of/dummy"
+
+PeriodicCommand:
+  command : real-command
+  dir : /tmp/commands
+
+RunOn:
+  mode : "fs"
+  fs_root : "/tmp/fs" 

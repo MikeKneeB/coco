@@ -7,8 +7,7 @@ import (
 
 var required_confs = [...]string {"PeriodicCommand.command"}
 var default_confs = map[string]interface{} {"Init.dir": "/tmp/coco",
-                                           "PeriodicCommand.dir": "/tmp/coco",
-                                           "RunOn.time": 1.0}
+                                           "PeriodicCommand.dir": "/tmp/coco"}
 
 func checkRequired(viper *viper.Viper) error {
   for _, val := range required_confs {

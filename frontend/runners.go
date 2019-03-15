@@ -5,7 +5,6 @@ import (
   "errors"
   "os/exec"
   "time"
-  "log"
   "github.com/fsnotify/fsnotify"
   "path/filepath"
   "os"
@@ -14,6 +13,10 @@ import (
 
 var ErrNoOuputFn error = errors.New("Output Function not defined!")
 
+type OutputFunction func(out string, ret_code int)
+type LogFunction func(items ...interface{})
+type OpFunction func(op string)
+
 type RunnerSignal int
 
 const (
@@ -21,8 +24,31 @@ const (
   ForceUpdate
 )
 
-type OutputFunction func(out string, ret_code int)
-type LogFunction func(items ...interface{})
+// Common composition types
+// Functions compositor - this is exposed because the controller needs to
+// populate it
+type runnerFuncs struct {
+  outputFunc OutputFunction
+  logFunc LogFunction
+  opFunc OpFunction
+}
+
+func NewRunnerFuncs(of OutputFunction, lf LogFunction, op OpFunction) runnerFuncs {
+  return runnerFuncs{of, lf, op}
+}
+
+// Channels compositor
+type runnerChannels struct {
+  sigChan chan RunnerSignal
+  comChan chan *exec.Cmd
+  resChan chan backend.RoutineOut
+  quitChan chan bool
+}
+
+func newRunnerChannels() runnerChannels {
+  return runnerChannels{make(chan RunnerSignal), make(chan *exec.Cmd),
+    make(chan backend.RoutineOut), make(chan bool)}
+}
 
 type Runner interface {
   Start() error
@@ -30,27 +56,21 @@ type Runner interface {
 }
 
 type TimeRunner struct {
+  // Actual struct data
   timeOut time.Duration
   command backend.CommandDef
-  outputFunc OutputFunction
-  logFunc LogFunction
-  sigChan chan RunnerSignal
-  comChan chan *exec.Cmd
-  resChan chan backend.RoutineOut
-  quitChan chan bool
+  // Callbacks
+  runnerFuncs
+  // Channels
+  runnerChannels
 }
 
-func NewTimeRunner(to float64, c backend.CommandDef,
-  of OutputFunction, lf LogFunction) *TimeRunner {
+func NewTimeRunner(to float64, c backend.CommandDef, rf runnerFuncs) *TimeRunner {
   r := new(TimeRunner)
   r.timeOut = time.Duration(to * 1000000000) * time.Nanosecond
   r.command = c
-  r.outputFunc = of
-  r.logFunc = lf
-  r.sigChan = make(chan RunnerSignal)
-  r.comChan = make(chan *exec.Cmd)
-  r.resChan = make(chan backend.RoutineOut)
-  r.quitChan = make(chan bool)
+  r.runnerFuncs = rf
+  r.runnerChannels = newRunnerChannels()
   return r
 }
 
@@ -93,12 +113,12 @@ func (r *TimeRunner) wait() {
 
 func (r *TimeRunner) send() {
   r.logFunc("Run command: ", r.command)
+  r.opFunc("EXECUTING")
   output, err := (<- r.resChan)()
   if err != nil {
     exit_err, ok := err.(*exec.ExitError)
     if !ok {
-      // Log error - use something smarter than current log tho
-      log.Println(err)
+      r.logFunc(err)
     } else {
       r.logFunc("Command exited: ", exit_err.ExitCode())
       r.outputFunc(output, exit_err.ExitCode())
@@ -107,6 +127,7 @@ func (r *TimeRunner) send() {
     r.logFunc("Command Exited: ", 0)
     r.outputFunc(output, 0)
   }
+  r.opFunc("IDLE")
 }
 
 func (r *TimeRunner) Signal(sig RunnerSignal) {
@@ -114,30 +135,26 @@ func (r *TimeRunner) Signal(sig RunnerSignal) {
 }
 
 type FSRunner struct {
+  // Actual data
   root string
   exts []string
   command backend.CommandDef
-  outputFunc OutputFunction
-  logFunc LogFunction
-  sigChan chan RunnerSignal
-  comChan chan *exec.Cmd
-  resChan chan backend.RoutineOut
-  quitChan chan bool
+  // Callbacks
+  runnerFuncs
+  // Signals
+  runnerChannels
+  // FS watcher;
   watcher *fsnotify.Watcher
 }
 
 func NewFSRunner(root string, exts []string, c backend.CommandDef,
-   of OutputFunction, lf LogFunction) (*FSRunner, error) {
+  rf runnerFuncs) (*FSRunner, error) {
   r := new(FSRunner)
   r.root = root
   r.exts = exts
   r.command = c
-  r.outputFunc = of
-  r.logFunc = lf
-  r.sigChan = make(chan RunnerSignal)
-  r.comChan = make(chan *exec.Cmd)
-  r.resChan = make(chan backend.RoutineOut)
-  r.quitChan = make(chan bool)
+  r.runnerFuncs = rf
+  r.runnerChannels = newRunnerChannels()
   var err error
   r.watcher, err = fsnotify.NewWatcher()
   if err != nil {
@@ -211,7 +228,7 @@ func (r *FSRunner) wait(check bool) fsStatus {
     }
   case error, ok := <- r.watcher.Errors:
     if ok {
-      log.Println(error)
+      r.logFunc(error)
     }
     r.quitChan <- true
     return fsQuit
@@ -221,13 +238,14 @@ func (r *FSRunner) wait(check bool) fsStatus {
 
 func (r *FSRunner) send() {
   r.logFunc("Run command: ", r.command)
+  r.opFunc("EXECUTING")
   r.comChan <- r.command.MakeRunnable()
 
   output, err := (<- r.resChan)()
   if err != nil {
     exit_err, ok := err.(*exec.ExitError)
     if !ok {
-      log.Println(err)
+      r.logFunc(err)
     } else {
       r.logFunc("Command exited: ", exit_err.ExitCode())
       r.outputFunc(output, exit_err.ExitCode())
@@ -236,6 +254,7 @@ func (r *FSRunner) send() {
     r.logFunc("Command exited: ", 0)
     r.outputFunc(output, 0)
   }
+  r.opFunc("IDLE")
 }
 
 func (r *FSRunner) checkUpdate(e fsnotify.Event) fsStatus {
