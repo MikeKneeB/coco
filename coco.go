@@ -7,8 +7,6 @@ import (
 )
 
 func main() {
-  /* Log stuff... */
-  /* */
   c := frontend.NewController()
   g, err := gocui.NewGui(gocui.OutputNormal)
   if err != nil {

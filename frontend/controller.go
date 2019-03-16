@@ -8,6 +8,7 @@ import (
   "errors"
   "os"
   "time"
+  "strings"
 )
 
 var ErrNoConfig = errors.New("Config file not yet read!")
@@ -186,6 +187,11 @@ func (c *Controller) StopCommandLoop() {
 }
 
 func (c *Controller) ShowOutput(output string, return_code int) {
+  var cls []backend.CompileLine
+  if return_code != 0 {
+    cls = backend.Parse(output)
+  }
+
   c.Gui.Update(func(g *gocui.Gui) error {
     v, err := g.View("normal")
     if err != nil {
@@ -193,9 +199,12 @@ func (c *Controller) ShowOutput(output string, return_code int) {
     }
     v.Clear()
     if return_code == 0 {
-      fmt.Fprint(v, "Looks good!")
+      fmt.Fprint(v, "\033[32;1mLooks good!\033[0m")
     } else {
-      fmt.Fprint(v, output)
+      for _, line := range cls {
+        fmt.Fprintf(v, "%s\n%d\n%s\n", line.FileName, line.Line,
+          strings.TrimSpace(line.Message))
+      }
     }
     return nil
   })
