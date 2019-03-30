@@ -25,13 +25,14 @@ func setDefaults(viper *viper.Viper) {
   }
 }
 
-func ReadConfig(paths []string) (*viper.Viper, error) {
+func ReadConfig(name string, paths []string) (*viper.Viper, error) {
   viper := viper.New()
   viper.AddConfigPath(".")
+  viper.AddConfigPath("$HOME/.config/coco")
   for _, v := range paths {
     viper.AddConfigPath(v)
   }
-  viper.SetConfigName("config")
+  viper.SetConfigName(name)
   setDefaults(viper)
   err := viper.ReadInConfig()
   if err != nil {

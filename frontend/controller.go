@@ -8,11 +8,13 @@ import (
   "errors"
   "os"
   "time"
-  "strings"
+  "flag"
 )
 
 var ErrNoConfig = errors.New("Config file not yet read!")
 var ErrBadConfig = errors.New("Config file invalid!")
+
+var conf_name = flag.String("config", "coconfig", "Name of config file without .yaml extension (default coconfig)")
 
 type Controller struct {
   Configuration *viper.Viper
@@ -29,6 +31,9 @@ func NewController() *Controller {
 
   c.operation = "IDLE"
   c.logY = 1
+  
+  flag.Parse()
+
   return c
 }
 
@@ -52,6 +57,16 @@ func (c *Controller) AddGui(g *gocui.Gui) error {
     return err
   }
 
+  err = g.SetKeybinding("", 'j', gocui.ModNone, c.scrollDown)
+  if err != nil {
+    return err
+  }
+
+  err = g.SetKeybinding("", 'k', gocui.ModNone, c.scrollUp)
+  if err != nil {
+    return err
+  }
+
   return nil
 }
 
@@ -70,10 +85,20 @@ func (c *Controller) toggleLog(g *gocui.Gui, v *gocui.View) error {
   return nil
 }
 
+func (c *Controller) scrollDown(g *gocui.Gui, v *gocui.View) error {
+  v.MoveCursor(0, 1, false)
+  return nil
+}
+
+func (c *Controller) scrollUp(g *gocui.Gui, v* gocui.View) error {
+  v.MoveCursor(0, -1, false)
+  return nil
+}
+
 func (c *Controller) ReadConfig() error {
   var err error
   c.Log("Reading config file...")
-  c.Configuration, err = backend.ReadConfig([]string{})
+  c.Configuration, err = backend.ReadConfig(*conf_name, []string{})
   if err != nil {
     c.Log("Error reading config file: ", err)
     return err
@@ -108,9 +133,14 @@ func (c *Controller) Layout(g *gocui.Gui) error {
   v, err = g.SetView("normal", 0, 1, max_x - 1, max_y - (c.logY * 8 + 1))
   if err == gocui.ErrUnknownView {
     v.Wrap = true
+    v.SelBgColor = gocui.ColorWhite
+    v.SelFgColor = gocui.ColorBlack
+    v.Highlight = true
   } else if err != nil {
     return err
   }
+
+  g.SetCurrentView("normal")
 
   return nil
 }
@@ -187,10 +217,6 @@ func (c *Controller) StopCommandLoop() {
 }
 
 func (c *Controller) ShowOutput(output string, return_code int) {
-  var cls []backend.CompileLine
-  if return_code != 0 {
-    cls = backend.Parse(output)
-  }
 
   c.Gui.Update(func(g *gocui.Gui) error {
     v, err := g.View("normal")
@@ -199,12 +225,11 @@ func (c *Controller) ShowOutput(output string, return_code int) {
     }
     v.Clear()
     if return_code == 0 {
+      v.Highlight = false
       fmt.Fprint(v, "\033[32;1mLooks good!\033[0m")
     } else {
-      for _, line := range cls {
-        fmt.Fprintf(v, "%s\n%d\n%s\n", line.FileName, line.Line,
-          strings.TrimSpace(line.Message))
-      }
+      v.Highlight = true
+      fmt.Fprintf(v, output)
     }
     return nil
   })

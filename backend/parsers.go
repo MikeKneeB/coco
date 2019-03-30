@@ -4,12 +4,13 @@ import (
   "strings"
   "strconv"
   "regexp"
+  "fmt"
   //"path/filepath"
 )
 
 // Golang specific regexp stuff - this needs to go
 
-var fullReg *regexp.Regexp = regexp.MustCompile(`(?m)^(.+?):(\d+?):\d+?:(.*?)`)
+var fullReg string = `(?m)(%s.+?):(\d+?):\d+?:(.*?)`
 
 type CompileLine struct {
   FileName string
@@ -17,10 +18,14 @@ type CompileLine struct {
   Message string
 }
 
-func Parse(output string) []CompileLine {
+func Parse(output string, root string) []CompileLine {
+  re, err := regexp.Compile(fmt.Sprintf(fullReg, root))
   cls := make([]CompileLine, 0, strings.Count(output, "\n"))
+  if err != nil {
+    return cls
+  }
 
-  matches := fullReg.FindAllStringSubmatchIndex(output, -1)
+  matches := re.FindAllStringSubmatchIndex(output, -1)
 
   for i, match := range matches {
     cls = append(cls, CompileLine{})
